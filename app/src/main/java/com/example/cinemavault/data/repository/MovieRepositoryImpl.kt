@@ -24,10 +24,6 @@ class MovieRepositoryImpl @Inject constructor(
 
     private val dao = db.movieDao()
 
-    // --- 1. REACTIVE STREAMS (SSOT) ---
-    // We return the DB source directly. It never closes.
-    // The ViewModel observes this.
-
     override fun getTrendingMovies(): Flow<List<Movie>> {
         return dao.getTrendingMovies().map { entities ->
             entities.map { it.toDomain() }
@@ -39,9 +35,6 @@ class MovieRepositoryImpl @Inject constructor(
             entities.map { it.toDomain() }
         }
     }
-
-    // --- 2. NETWORK REFRESH (COMMANDS) ---
-    // These are called by the ViewModel to update the SSOT.
 
     override suspend fun refreshTrendingMovies(): Resource<Unit> {
         return try {
@@ -60,6 +53,8 @@ class MovieRepositoryImpl @Inject constructor(
             )
             Resource.Success(Unit)
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+
             Resource.Error(e.localizedMessage ?: "Unknown Error")
         }
     }
@@ -81,6 +76,8 @@ class MovieRepositoryImpl @Inject constructor(
             )
             Resource.Success(Unit)
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+
             Resource.Error(e.localizedMessage ?: "Unknown Error")
         }
     }
