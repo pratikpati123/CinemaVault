@@ -1,7 +1,5 @@
-package com.example.cinemavault.data.remote
+package com.example.cinemavault.data.remote.dto
 
-import com.example.cinemavault.data.remote.dto.MovieDto
-import com.example.cinemavault.data.remote.dto.MovieResponseDto
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -46,8 +44,8 @@ interface TmdbApi {
      *
      * @param movieId The ID of the movie to fetch.
      * @param language The language of the results.
-     * @return A [MovieDto] containing the details of the movie.
+     * @return A [MovieDTO] containing the details of the movie.
      */
     @GET("movie/{movie_id}")
-    suspend fun getMovieDetails(@Path("movie_id") movieId: Int, @Query("language") language: String = "en-US"): MovieDto
+    suspend fun getMovieDetails(@Path("movie_id") movieId: Int, @Query("language") language: String = "en-US"): MovieDTO
 }

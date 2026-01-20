@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
  * @property voteAverage The average vote score of the movie.
  */
 @Serializable
-data class MovieDto(
+data class MovieDTO(
     val id: Int,
     val title: String,
     val overview: String,
@@ -42,5 +42,5 @@ data class MovieDto(
 @Serializable
 data class MovieResponseDto(
     val page: Int,
-    val results: List<MovieDto>
+    val results: List<MovieDTO>
 )

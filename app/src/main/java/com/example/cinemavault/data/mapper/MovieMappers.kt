@@ -2,18 +2,18 @@ package com.example.cinemavault.data.mapper
 
 import com.example.cinemavault.core.common.Constants
 import com.example.cinemavault.data.local.entity.MovieEntity
-import com.example.cinemavault.data.remote.dto.MovieDto
+import com.example.cinemavault.data.remote.dto.MovieDTO
 import com.example.cinemavault.domain.model.Movie
 
 /**
- * Converts a [MovieDto] to a [MovieEntity].
+ * Converts a [MovieDTO] to a [MovieEntity].
  *
  * @param isTrending Whether the movie is trending.
  * @param isNowPlaying Whether the movie is now playing.
  * @param isBookmarked Whether the movie is bookmarked.
  * @return The corresponding [MovieEntity].
  */
-fun MovieDto.toEntity(
+fun MovieDTO.toEntity(
     isTrending: Boolean = false,
     isNowPlaying: Boolean = false,
     isBookmarked: Boolean = false

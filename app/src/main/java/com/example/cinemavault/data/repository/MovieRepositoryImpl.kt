@@ -3,24 +3,19 @@ package com.example.cinemavault.data.repository
 import androidx.room.withTransaction
 import com.example.cinemavault.core.common.Resource
 import com.example.cinemavault.data.local.MoviesDatabase
+import com.example.cinemavault.data.local.entity.MovieEntity
 import com.example.cinemavault.data.mapper.toDomain
 import com.example.cinemavault.data.mapper.toEntity
-import com.example.cinemavault.data.remote.TmdbApi
+import com.example.cinemavault.data.remote.dto.MovieDTO
+import com.example.cinemavault.data.remote.dto.TmdbApi
 import com.example.cinemavault.domain.model.Movie
 import com.example.cinemavault.domain.repository.MovieRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Implementation of [MovieRepository] that uses a remote API and a local database as data sources.
- *
- * @property api The remote API for fetching movie data.
- * @property db The local database for caching movie data.
- */
 @Singleton
 class MovieRepositoryImpl @Inject constructor(
     private val api: TmdbApi,
@@ -29,180 +24,142 @@ class MovieRepositoryImpl @Inject constructor(
 
     private val dao = db.movieDao()
 
-    /**
-     * Fetches the list of trending movies.
-     *
-     * It first emits the locally cached data, then fetches the latest data from the remote API.
-     * If the fetch is successful, it updates the local database and emits the updated data.
-     *
-     * @param forceFetch If true, forces a fetch from the remote API, otherwise fetches only if local data is empty.
-     * @return A [Flow] of [Resource] containing the list of trending [Movie]s.
-     */
-    override fun getTrendingMovies(forceFetch: Boolean): Flow<Resource<List<Movie>>> = flow {
-        emit(Resource.Loading(true))
+    // --- 1. REACTIVE STREAMS (SSOT) ---
+    // We return the DB source directly. It never closes.
+    // The ViewModel observes this.
 
-        val localData = dao.getTrendingMovies().first()
-        emit(Resource.Success(localData.map { it.toDomain() }))
-        
-        val shouldFetch = forceFetch || localData.isEmpty()
-        if (shouldFetch) {
-            try {
-                val response = api.getTrendingMovies()
-                val remoteMovies = response.results
-
-                db.withTransaction {
-                    val bookmarkedIds = dao.getBookmarkedMovies().first().map { it.id }.toSet()
-
-                    dao.clearTrending()
-                    val entities = remoteMovies.map { dto ->
-                        dto.toEntity(
-                            isTrending = true,
-                            isNowPlaying = false,
-                            isBookmarked = bookmarkedIds.contains(dto.id)
-                        )
-                    }
-                    dao.insertMovies(entities)
-                }
-            } catch (e: Exception) {
-                emit(Resource.Error("Could not refresh data: ${e.localizedMessage}", localData.map { it.toDomain() }))
-            }
-        }
-
-        val updatedLocalData = dao.getTrendingMovies().first()
-        emit(Resource.Success(updatedLocalData.map { it.toDomain() }))
-
-        emit(Resource.Loading(false))
-    }
-
-    /**
-     * Fetches the list of movies that are currently playing in theaters.
-     *
-     * It first emits the locally cached data, then fetches the latest data from the remote API.
-     * If the fetch is successful, it updates the local database and emits the updated data.
-     *
-     * @param forceFetch If true, forces a fetch from the remote API, otherwise fetches only if local data is empty.
-     * @return A [Flow] of [Resource] containing the list of now playing [Movie]s.
-     */
-    override fun getNowPlayingMovies(forceFetch: Boolean): Flow<Resource<List<Movie>>> = flow {
-        emit(Resource.Loading(true))
-
-        val localData = dao.getNowPlayingMovies().first()
-        emit(Resource.Success(localData.map { it.toDomain() }))
-
-        val shouldFetch = forceFetch || localData.isEmpty()
-
-        if (shouldFetch) {
-            try {
-                val response = api.getNowPlayingMovies()
-                val remoteMovies = response.results
-
-                db.withTransaction {
-
-                    val bookmarkedIds = dao.getBookmarkedMovies().first().map { it.id }.toSet()
-                    dao.clearNowPlaying()
-
-                    val entities = remoteMovies.map { dto ->
-                        dto.toEntity(
-                            isTrending = false,
-                            isNowPlaying = true,
-                            isBookmarked = bookmarkedIds.contains(dto.id)
-                        )
-                    }
-
-                    dao.insertMovies(entities)
-                }
-            } catch (e: Exception) {
-                emit(Resource.Error("Could not refresh data: ${e.localizedMessage}", localData.map { it.toDomain() }))
-            }
-        }
-
-        val updatedLocalData = dao.getNowPlayingMovies().first()
-        emit(Resource.Success(updatedLocalData.map { it.toDomain() }))
-
-        emit(Resource.Loading(false))
-    }
-
-    /**
-     * Fetches the list of bookmarked movies from the local database.
-     *
-     * @return A [Flow] of a list of bookmarked [Movie]s.
-     */
-    override fun getBookmarkedMovies(): Flow<List<Movie>> {
-        return dao.getBookmarkedMovies().map { entities ->
+    override fun getTrendingMovies(): Flow<List<Movie>> {
+        return dao.getTrendingMovies().map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
-    /**
-     * Fetches a movie by its ID.
-     *
-     * It first tries to find the movie in the local database. If not found, it fetches the movie
-     * details from the remote API and caches it in the local database.
-     *
-     * @param id The ID of the movie to fetch.
-     * @return A [Resource] containing the [Movie].
-     */
-    override suspend fun getMovieById(id: Int): Resource<Movie> {
-        return try {
-            val localMovie = dao.getMovieById(id)
-
-            if (localMovie != null) {
-                Resource.Success(localMovie.toDomain())
-            } else {
-                val remoteMovieDto = api.getMovieDetails(id)
-
-                val newEntity = remoteMovieDto.toEntity(
-                    isTrending = false,
-                    isNowPlaying = false,
-                    isBookmarked = false
-                )
-
-                dao.insertSingleMovie(newEntity)
-
-                Resource.Success(newEntity.toDomain())
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Resource.Error("Could not load movie details. Check internet connection.")
+    override fun getNowPlayingMovies(): Flow<List<Movie>> {
+        return dao.getNowPlayingMovies().map { entities ->
+            entities.map { it.toDomain() }
         }
     }
 
-    /**
-     * Toggles the bookmark status of a movie.
-     *
-     * @param id The ID of the movie to update.
-     * @param isBookmarked The new bookmark status.
-     */
+    // --- 2. NETWORK REFRESH (COMMANDS) ---
+    // These are called by the ViewModel to update the SSOT.
+
+    override suspend fun refreshTrendingMovies(): Resource<Unit> {
+        return try {
+            val response = api.getTrendingMovies()
+
+            saveMoviesWithMerge(
+                remoteMovies = response.results,
+                clearFlagAction = { dao.clearTrending() },
+                mergeMapper = { dto, existing ->
+                    dto.toEntity(
+                        isTrending = true,
+                        isNowPlaying = existing?.isNowPlaying ?: false,
+                        isBookmarked = existing?.isBookmarked ?: false
+                    )
+                }
+            )
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.localizedMessage ?: "Unknown Error")
+        }
+    }
+
+    override suspend fun refreshNowPlayingMovies(): Resource<Unit> {
+        return try {
+            val response = api.getNowPlayingMovies()
+
+            saveMoviesWithMerge(
+                remoteMovies = response.results,
+                clearFlagAction = { dao.clearNowPlaying() },
+                mergeMapper = { dto, existing ->
+                    dto.toEntity(
+                        isTrending = existing?.isTrending ?: false,
+                        isNowPlaying = true,
+                        isBookmarked = existing?.isBookmarked ?: false
+                    )
+                }
+            )
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.localizedMessage ?: "Unknown Error")
+        }
+    }
+
+    override fun getBookmarkedMovies(): Flow<List<Movie>> {
+        return dao.getBookmarkedMovies().map { entities -> entities.map { it.toDomain() } }
+    }
+
+    override suspend fun getMovieById(id: Int): Resource<Movie> {
+        return try {
+            val local = dao.getMovieById(id)
+            if (local != null) return Resource.Success(local.toDomain())
+
+            val remote = api.getMovieDetails(id)
+            dao.insertSingleMovie(remote.toEntity(
+                isTrending = false,
+                isNowPlaying = false,
+                isBookmarked = false
+            ))
+            Resource.Success(remote.toEntity(
+                isTrending = false,
+                isNowPlaying = false,
+                isBookmarked = false
+            ).toDomain())
+        } catch (_: Exception) {
+            Resource.Error("Error")
+        }
+    }
+
     override suspend fun toggleBookmark(id: Int, isBookmarked: Boolean) {
         dao.updateBookmark(id, isBookmarked)
     }
 
-    /**
-     * Searches for movies based on a query string.
-     *
-     * It first tries to fetch search results from the remote API. If the remote search fails,
-     * it attempts to search for movies in the local database.
-     *
-     * @param query The search query.
-     * @return A [Flow] of a list of [Movie]s matching the query.
-     */
-    override suspend fun searchMovies(query: String): Flow<List<Movie>> = flow {
+    override suspend fun searchMovies(query: String): Flow<List<Movie>> = kotlinx.coroutines.flow.flow {
         try {
             val response = api.searchMovies(query)
+            val movieIds = response.results.map { it.id }
+            val existingMap = dao.getMoviesByIds(movieIds).associateBy { it.id }
+
             val movies = response.results.map { dto ->
-                val isBookmarked = dao.getMovieById(dto.id)?.isBookmarked ?: false
-                dto.toEntity(isBookmarked = isBookmarked).toDomain()
+                val existing = existingMap[dto.id]
+                dto.toEntity(
+                    isTrending = false,
+                    isNowPlaying = false,
+                    isBookmarked = existing?.isBookmarked ?: false
+                ).toDomain()
             }
+
             emit(movies)
+
         } catch (_: Exception) {
-
             val localResults = dao.searchMovies(query).first()
+            emit(localResults.map { it.toDomain() })
+        }
+    }
 
-            if (localResults.isNotEmpty()) {
-                emit(localResults.map { it.toDomain() })
-            } else {
-                emit(emptyList())
+    /**
+     * A generic helper to handle the "Safe Merge" strategy.
+     * * @param remoteMovies The fresh list of movies from the API.
+     * @param clearFlagAction A lambda to clear the specific flag (e.g., clearTrending or clearNowPlaying).
+     * @param mergeMapper A lambda that defines how to merge the new DTO with the (optional) existing Entity.
+     */
+    private suspend fun saveMoviesWithMerge(
+        remoteMovies: List<MovieDTO>,
+        clearFlagAction: suspend () -> Unit,
+        mergeMapper: (MovieDTO, MovieEntity?) -> MovieEntity
+    ) {
+        db.withTransaction {
+            clearFlagAction()
+
+            val movieIds = remoteMovies.map { it.id }
+            val existingMap = dao.getMoviesByIds(movieIds).associateBy { it.id }
+
+            val mergedList = remoteMovies.map { dto ->
+                val existing = existingMap[dto.id]
+                mergeMapper(dto, existing)
             }
+
+            dao.insertMovies(mergedList)
         }
     }
 }

@@ -6,19 +6,15 @@ import com.example.cinemavault.core.common.Resource
 import com.example.cinemavault.domain.model.Movie
 import com.example.cinemavault.domain.repository.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Represents the state of the home screen.
- *
- * @property trendingMovies The list of currently trending movies.
- * @property nowPlayingMovies The list of movies currently playing in theaters.
- * @property isLoading A boolean indicating if the screen is currently loading data.
- * @property error An optional error message to be displayed.
- */
 data class HomeState(
     val trendingMovies: List<Movie> = emptyList(),
     val nowPlayingMovies: List<Movie> = emptyList(),
@@ -26,68 +22,62 @@ data class HomeState(
     val error: String? = null
 )
 
-/**
- * ViewModel for the Home screen.
- *
- * This ViewModel is responsible for fetching and managing the data for the home screen,
- * including trending movies and movies currently playing in theaters.
- *
- * @param repository The repository for accessing movie data.
- */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: MovieRepository
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(HomeState())
-    /**
-     * A [StateFlow] that emits the current state of the home screen.
-     */
-    val state: StateFlow<HomeState> = _state
+    private val _isLoading = MutableStateFlow(false)
+    private val _error = MutableStateFlow<String?>(null)
 
-    /**
-     * Initializes the ViewModel by loading the initial home screen data.
-     */
+    val state: StateFlow<HomeState> = combine(
+        repository.getTrendingMovies(),
+        repository.getNowPlayingMovies(),
+        _isLoading,
+        _error
+    ) { trending, nowPlaying, loading, error ->
+        HomeState(
+            trendingMovies = trending,
+            nowPlayingMovies = nowPlaying,
+            isLoading = loading,
+            error = error
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = HomeState(isLoading = true)
+    )
+
     init {
         loadHomeData()
     }
 
     /**
-     * Fetches the trending and now playing movies from the repository and updates the UI state.
-     * It collects data from both flows and updates the state accordingly.
+     * Triggers the network refresh.
+     * This is a "Fire and Forget" command. The results will arrive via the 'state' flow above
+     * because the Repository updates the Database, and 'state' observes the Database.
      */
-    private fun loadHomeData() {
+    fun loadHomeData() {
         viewModelScope.launch {
-            // Collect Trending
-            repository.getTrendingMovies(forceFetch = true).collect { result ->
-                when(result) {
-                    is Resource.Success -> {
-                        _state.value = _state.value.copy(
-                            trendingMovies = result.data ?: emptyList(),
-                            isLoading = false,
-                            error = null
-                        )
-                    }
-                    is Resource.Error -> {
-                        _state.value = _state.value.copy(
-                            isLoading = false,
-                            error = result.message,
-                            // Even on error, show cached data if available
-                            trendingMovies = result.data ?: emptyList()
-                        )
-                    }
-                    is Resource.Loading -> {
-                        _state.value = _state.value.copy(isLoading = result.isLoading)
-                    }
-                }
+            _isLoading.value = true
+            _error.value = null
+
+            // [FIX] Run fetches in PARALLEL using async
+            // We use 'await()' to wait for both to finish before hiding the loading spinner
+            val trendingJob = async { repository.refreshTrendingMovies() }
+            val nowPlayingJob = async { repository.refreshNowPlayingMovies() }
+
+            val trendingResult = trendingJob.await()
+            val nowPlayingResult = nowPlayingJob.await()
+
+            // Simple error handling: if either fails, show the error message.
+            if (trendingResult is Resource.Error) {
+                _error.value = trendingResult.message
+            } else if (nowPlayingResult is Resource.Error) {
+                _error.value = nowPlayingResult.message
             }
 
-            // Collect Now Playing (Launch in parallel or sequentially as needed)
-            repository.getNowPlayingMovies(forceFetch = true).collect { result ->
-                if (result is Resource.Success) {
-                    _state.value = _state.value.copy(nowPlayingMovies = result.data ?: emptyList())
-                }
-            }
+            _isLoading.value = false
         }
     }
 }

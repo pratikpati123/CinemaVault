@@ -5,60 +5,37 @@ import androidx.lifecycle.viewModelScope
 import com.example.cinemavault.domain.model.Movie
 import com.example.cinemavault.domain.repository.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * ViewModel for the Search screen.
- *
- * This ViewModel handles the logic for searching movies. It uses a debounce operator
- * to wait for the user to stop typing before performing a search.
- *
- * @param repository The repository for accessing movie data.
- */
-@OptIn(FlowPreview::class) // Required for debounce
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repository: MovieRepository
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
-    /**
-     * A [StateFlow] that emits the current search query entered by the user.
-     */
     val query: StateFlow<String> = _query
 
-    private val _results = MutableStateFlow<List<Movie>>(emptyList())
-    /**
-     * A [StateFlow] that emits the results of the movie search.
-     */
-    val results: StateFlow<List<Movie>> = _results
-
-    /**
-     * Initializes the ViewModel by setting up a flow that listens for changes to the search query,
-     * debounces the input, and then triggers a search.
-     */
-    init {
-        viewModelScope.launch {
-            _query
-                .debounce(500L) // BONUS: Wait 500ms after user stops typing
-                .distinctUntilChanged()
-                .filter { it.isNotBlank() }
-                .collect { searchQuery ->
-                    repository.searchMovies(searchQuery).collect { movies ->
-                        _results.value = movies
-                    }
-                }
+    val results: StateFlow<List<Movie>> = _query
+        .debounce(500L)            // 1. Wait for typing to stop
+        .distinctUntilChanged()    // 2. Ignore same query
+        .flatMapLatest { searchQuery ->
+            // 3. CANCEL previous request if new one arrives
+            if (searchQuery.isBlank()) {
+                flowOf(emptyList())
+            } else {
+                repository.searchMovies(searchQuery)
+            }
         }
-    }
+        .stateIn(                  // 4. Cache the latest value for the UI
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
-    /**
-     * Called when the user changes the search query in the UI.
-     *
-     * @param newQuery The new search query.
-     */
     fun onQueryChange(newQuery: String) {
         _query.value = newQuery
     }

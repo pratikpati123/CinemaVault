@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.example.cinemavault.core.common.Constants
 import com.example.cinemavault.data.local.MoviesDatabase
 import com.example.cinemavault.data.local.dao.MovieDao
-import com.example.cinemavault.data.remote.TmdbApi
+import com.example.cinemavault.data.remote.dto.TmdbApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
