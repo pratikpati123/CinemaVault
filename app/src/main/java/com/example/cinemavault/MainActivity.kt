@@ -106,10 +106,7 @@ fun MainApp() {
         ) {
             composable(Screen.Home.route) { HomeScreen(navController) }
             composable(Screen.Search.route) { SearchScreen(navController) }
-
-            // 4. Register the Bookmarks Screen
             composable(Screen.Bookmarks.route) { BookmarksScreen(navController) }
-
             composable(Screen.Details.route) { DetailScreen() }
         }
     }

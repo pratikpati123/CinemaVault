@@ -1,7 +1,7 @@
 package com.example.cinemavault.core.common
 
 /**
- * A sealed class that encapsulates a resource with its loading, success, and error states.
+ * A sealed class that encapsulates a resource with its success, and error states.
  */
 sealed class Resource<T>(val data: T? = null, val message: String? = null) {
 

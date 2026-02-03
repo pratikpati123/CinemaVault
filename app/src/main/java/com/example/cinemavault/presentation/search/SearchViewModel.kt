@@ -1,5 +1,6 @@
 package com.example.cinemavault.presentation.search
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.cinemavault.domain.model.Movie
@@ -13,13 +14,15 @@ import javax.inject.Inject
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val repository: MovieRepository
+    private val repository: MovieRepository,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    companion object {
+        private const val KEY_SEARCH_QUERY = "last_search_query"
+    }
+    val query: StateFlow<String> = savedStateHandle.getStateFlow(KEY_SEARCH_QUERY, "")
 
-    private val _query = MutableStateFlow("")
-    val query: StateFlow<String> = _query
-
-    val results: StateFlow<List<Movie>> = _query
+    val results: StateFlow<List<Movie>> = query
         .debounce(500L)            // 1. Wait for typing to stop
         .distinctUntilChanged()    // 2. Ignore same query
         .flatMapLatest { searchQuery ->
@@ -37,6 +40,6 @@ class SearchViewModel @Inject constructor(
         )
 
     fun onQueryChange(newQuery: String) {
-        _query.value = newQuery
+        savedStateHandle[KEY_SEARCH_QUERY] = newQuery
     }
 }
